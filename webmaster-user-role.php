@@ -3,7 +3,7 @@
 Plugin Name: Webmaster User Role
 Plugin URI: http://tylerdigital.com
 Description: Adds a Webmaster user role between Administrator and Editor.  By default this user is the same as Administrator, without the capability to manage plugins or change themes
-Version: 1.0.9
+Version: 1.1
 Author: Tyler Digital
 Author URI: http://tylerdigital.com
 Author Email: support@tylerdigital.com
@@ -37,7 +37,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 
 		const slug = 'td-webmaster-user-role';
 
-		const version = '1.0.9';
+		const version = '1.1';
 
 		private $default_options = array(
 			'role_display_name' => 'Admin',
@@ -72,6 +72,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 				$this->activate( false );
 				update_site_option( 'td-webmaster-user-role-version', self::version );
 			}
+			include( 'includes/prst.php' );
 		} // end constructor
 
 		function activate( $network_wide ) {
@@ -141,6 +142,9 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 			if ( current_user_can( 'webmaster' ) ) {
 				remove_menu_page( 'options-general.php' );
 				remove_menu_page( 'branding' );
+				remove_menu_page( 'sucuriscan' );
+				remove_menu_page( 'tools.php' );
+				remove_menu_page( 'edit.php?post_type=acf' );
 			}
 		}
 
