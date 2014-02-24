@@ -3,7 +3,7 @@
 Plugin Name: Webmaster User Role
 Plugin URI: http://tylerdigital.com
 Description: Adds a Webmaster user role between Administrator and Editor.  By default this user is the same as Administrator, without the capability to manage plugins or change themes
-Version: 1.1.1
+Version: 1.2
 Author: Tyler Digital
 Author URI: http://tylerdigital.com
 Author Email: support@tylerdigital.com
@@ -37,7 +37,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 
 		const slug = 'td-webmaster-user-role';
 
-		const version = '1.1.1';
+		const version = '1.2';
 
 		private $default_options = array(
 			'role_display_name' => 'Admin',
@@ -70,7 +70,6 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 				$this->activate( false );
 				update_site_option( 'td-webmaster-user-role-version', self::version );
 			}
-			include( 'includes/prst.php' );
 		} // end constructor
 
 		function activate( $network_wide ) {
@@ -107,6 +106,11 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 	 * Core Functions
 	 *---------------------------------------------*/
 
+		function current_user_is_webmaster() {
+			if ( is_super_admin() ) return false;
+			return current_user_can( 'webmaster' );
+		}
+
 		function capabilities() {
 			$admin_role = get_role( 'administrator' );
 			$capabilities = $admin_role->capabilities;
@@ -125,6 +129,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 			unset( $capabilities['add_users'] );
 			unset( $capabilities['edit_users'] );
 			unset( $capabilities['delete_users'] );
+			unset( $capabilities['remove_users'] );
 			unset( $capabilities['promote_users'] );
 
 			/* Add Gravity Forms Capabilities */
@@ -137,7 +142,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 		}
 
 		function cleanup_dashboard_widgets() {
-			if ( current_user_can( 'webmaster' ) ) {
+			if ( $this->current_user_is_webmaster() ) {
 				// remove_meta_box( 'dashboard_recent_comments', 'dashboard', 'normal' );
 				remove_meta_box( 'dashboard_incoming_links', 'dashboard', 'normal' );
 				remove_meta_box( 'dashboard_quick_press', 'dashboard', 'side' );
@@ -148,7 +153,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 		}
 
 		function admin_menu() {
-			if ( current_user_can( 'webmaster' ) ) {
+			if ( $this->current_user_is_webmaster() ) {
 				remove_menu_page( 'options-general.php' );
 				remove_menu_page( 'branding' );
 				remove_menu_page( 'sucuriscan' );
