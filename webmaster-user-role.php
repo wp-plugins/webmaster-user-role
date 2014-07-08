@@ -1,9 +1,9 @@
 <?php
 /*
 Plugin Name: Webmaster User Role
-Plugin URI: http://tylerdigital.com
+Plugin URI: http://tylerdigital.com/products/webmaster-user-role/
 Description: Adds a Webmaster user role between Administrator and Editor.  By default this user is the same as Administrator, without the capability to manage plugins or change themes
-Version: 1.21
+Version: 1.3
 Author: Tyler Digital
 Author URI: http://tylerdigital.com
 Author Email: support@tylerdigital.com
@@ -37,7 +37,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 
 		const slug = 'td-webmaster-user-role';
 
-		const version = '1.21';
+		const version = '1.3';
 
 		private $default_options = array(
 			'role_display_name' => 'Admin',
@@ -61,8 +61,8 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 			add_action( 'wpmu_new_blog', array( $this, 'add_role_to_blog' ) );
 			add_action( 'updated_'.self::slug.'_option', array( $this, 'updated_option' ), 10, 3 );
 			add_action( 'deleted_'.self::slug.'_option', array( $this, 'deleted_option' ) );
-			add_action( 'load-user-new.php', array( $this, 'prevent_user_add' ) );
 			add_action( 'admin_menu', array( &$this, 'admin_menu' ), 999 );
+			add_action( 'admin_init', array( &$this, 'create_role_if_missing' ), 10 );
 			add_action( 'admin_init', array( &$this, 'cleanup_dashboard_widgets' ), 20 );
 			$site_version = get_site_option( 'td-webmaster-user-role-version' );
 			if( $site_version!=self::version ) {
@@ -70,6 +70,14 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 				$this->activate( false );
 				update_site_option( 'td-webmaster-user-role-version', self::version );
 			}
+
+			/* Load Modules */
+			include_once( dirname( __FILE__ ). '/includes/module-cf7.php' );
+			new TDWUR_Cf7( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-itsec.php' );
+			new TDWUR_Itsec( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-yoast.php' );
+			new TDWUR_Yoast( $this );
 		} // end constructor
 
 		function activate( $network_wide ) {
@@ -106,7 +114,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 	 * Core Functions
 	 *---------------------------------------------*/
 
-		function current_user_is_webmaster() {
+		public static function current_user_is_webmaster() {
 			if ( is_super_admin() ) return false;
 			return current_user_can( 'webmaster' );
 		}
@@ -126,6 +134,8 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 			unset( $capabilities['switch_themes'] );
 			unset( $capabilities['edit_themes'] );
 			unset( $capabilities['delete_themes'] );
+			unset( $capabilities['list_users'] );
+			unset( $capabilities['create_users'] );
 			unset( $capabilities['add_users'] );
 			unset( $capabilities['edit_users'] );
 			unset( $capabilities['delete_users'] );
@@ -145,9 +155,66 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 			$capabilities['tablepress_access_about_screen'] = 1;
 			$capabilities['tablepress_access_options_screen'] = 0;
 
+			/* Add WooCommerce Capabilities */
+			$woo_caps = $this->get_woocommerce_capabilities();
+			foreach ( $woo_caps as $woo_cap_key => $woo_cap_array ) {
+				foreach ($woo_cap_array as $key => $woo_cap) {
+					$capabilities[$woo_cap] = 1;
+				}
+			}
+			// $capabilities['manage_woocommerce'] = 0;
+
 			$capabilities['editor'] = 1; // Needed for 3rd party plugins that check explicitly for the "editor" role (looking at you NextGen Gallery)
 
+			$capabilities = apply_filters( 'td_webmaster_capabilities', $capabilities );
 			return $capabilities;
+		}
+
+		public function get_woocommerce_capabilities() {
+			$capabilities = array();
+
+			$capabilities['core'] = array(
+				'manage_woocommerce',
+				'view_woocommerce_reports'
+			);
+
+			$capability_types = array( 'product', 'shop_order', 'shop_coupon' );
+
+			foreach ( $capability_types as $capability_type ) {
+
+				$capabilities[ $capability_type ] = array(
+					// Post type
+					"edit_{$capability_type}",
+					"read_{$capability_type}",
+					"delete_{$capability_type}",
+					"edit_{$capability_type}s",
+					"edit_others_{$capability_type}s",
+					"publish_{$capability_type}s",
+					"read_private_{$capability_type}s",
+					"delete_{$capability_type}s",
+					"delete_private_{$capability_type}s",
+					"delete_published_{$capability_type}s",
+					"delete_others_{$capability_type}s",
+					"edit_private_{$capability_type}s",
+					"edit_published_{$capability_type}s",
+
+					// Terms
+					"manage_{$capability_type}_terms",
+					"edit_{$capability_type}_terms",
+					"delete_{$capability_type}_terms",
+					"assign_{$capability_type}_terms"
+				);
+			}
+
+			return $capabilities;
+		}
+
+		function create_role_if_missing() {
+			$wp_roles = new WP_Roles();
+			if ( $wp_roles->is_role( 'webmaster' ) ) return;
+
+			$this->deactivate( false );
+			$this->activate( false );
 		}
 
 		function cleanup_dashboard_widgets() {
@@ -168,6 +235,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 				remove_menu_page( 'sucuriscan' );
 				remove_menu_page( 'tools.php' );
 				remove_menu_page( 'edit.php?post_type=acf' );
+				remove_menu_page( 'edit.php?post_type=acf-field-group' );
 			}
 		}
 
@@ -176,10 +244,6 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 			$capabilities = $this->capabilities();
 			add_role( 'webmaster', 'Admin', $capabilities );
 			restore_current_blog();
-		}
-
-		function prevent_user_add() {
-			if ( !current_user_can( 'add_users' ) ) wp_redirect( admin_url(), $status = 302 );
 		}
 
 		function updated_option( $option, $oldvalue, $newValue ) {
@@ -298,8 +362,8 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 				$this->load_file( self::slug . '-admin-script', '/js/admin.js', true );
 				$this->load_file( self::slug . '-admin-style', '/css/admin.css' );
 			} else {
-				$this->load_file( self::slug . '-script', '/js/widget.js', true );
-				$this->load_file( self::slug . '-style', '/css/widget.css' );
+				// $this->load_file( self::slug . '-script', '/js/widget.js', true );
+				// $this->load_file( self::slug . '-style', '/css/widget.css' );
 			} // end if/else
 		} // end register_scripts_and_styles
 
