@@ -25,7 +25,6 @@ License:
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 */
-
 if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 	class TD_WebmasterUserRole {
 
@@ -39,11 +38,15 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 
 		const version = '1.3.1';
 
+		const file = __FILE__;
+
 		private $default_options = array(
 			'role_display_name' => 'Admin',
 			'cap_gravityforms_view_entries' => 1,
 			'cap_gravityforms_edit_forms' => 0,
 		);
+
+		private $pro;
 
 		/*--------------------------------------------*
 	 * Constructor
@@ -57,25 +60,51 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 			load_plugin_textdomain( 'td-webmaster-user-role', false, dirname( plugin_basename( __FILE__ ) ) . '/lang' );
 
 			// Load JavaScript and stylesheets
-			// $this->register_scripts_and_styles();
+	    	add_action( 'wp_enqueue_scripts', array( $this, 'register_scripts_and_styles' ), 11 );
 			add_action( 'wpmu_new_blog', array( $this, 'add_role_to_blog' ) );
 			add_action( 'updated_'.self::slug.'_option', array( $this, 'updated_option' ), 10, 3 );
 			add_action( 'deleted_'.self::slug.'_option', array( $this, 'deleted_option' ) );
 			add_action( 'admin_menu', array( &$this, 'admin_menu' ), 999 );
 			add_action( 'admin_init', array( &$this, 'create_role_if_missing' ), 10 );
+			add_action( 'admin_init', array( &$this, 'prevent_network_admin_access' ), 10 );
 			add_action( 'admin_init', array( &$this, 'cleanup_dashboard_widgets' ), 20 );
 			$site_version = get_site_option( 'td-webmaster-user-role-version' );
 			if( $site_version!=self::version ) {
-				$this->deactivate( false );
-				$this->activate( false );
+				$this->deactivate( is_multisite() );
+				$this->activate( is_multisite() );
 				update_site_option( 'td-webmaster-user-role-version', self::version );
 			}
 
-			/* Load Modules */
+			require_once( dirname( __FILE__ ). '/includes/updater.php' );
+			new TD_WebmasterUserRoleUpdater( $this );
+
+			/* Load Core Modules */
+			include_once( dirname( __FILE__ ). '/includes/module-plugins.php' );
+			new TDWUR_Plugins( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-themes.php' );
+			new TDWUR_Themes( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-users.php' );
+			new TDWUR_Users( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-tools.php' );
+			new TDWUR_Tools( $this );
+
+			/* Load 3rd Party Modules */
+			include_once( dirname( __FILE__ ). '/includes/module-acf.php' );
+			new TDWUR_ACF( $this );
 			include_once( dirname( __FILE__ ). '/includes/module-cf7.php' );
 			new TDWUR_Cf7( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-event-espresso.php' );
+			new TDWUR_Event_Espresso( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-events-calendar.php' );
+			new TDWUR_Events_Calendar( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-gravity-forms.php' );
+			new TDWUR_Gravity_Forms( $this );
 			include_once( dirname( __FILE__ ). '/includes/module-itsec.php' );
 			new TDWUR_Itsec( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-sgcachepress.php' );
+			new TDWUR_SGCachePress( $this );
+			include_once( dirname( __FILE__ ). '/includes/module-wpai.php' );
+			new TDWUR_WPAI( $this );
 			include_once( dirname( __FILE__ ). '/includes/module-yoast.php' );
 			new TDWUR_Yoast( $this );
 		} // end constructor
@@ -166,6 +195,20 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 
 			$capabilities['editor'] = 1; // Needed for 3rd party plugins that check explicitly for the "editor" role (looking at you NextGen Gallery)
 
+			if ( is_multisite() ) {
+				$capabilities['administrator'] = 1;
+				$capabilities['level_10'] = 1;
+			}
+
+			global $webmaster_user_role_config;
+			if ( !empty ( $webmaster_user_role_config ) ) {
+				foreach ($webmaster_user_role_config as $config_key => $config_value) {
+					if ( strpos( $config_key, 'webmaster_cap') !== false && is_array( $config_value ) ) {
+						$capabilities = wp_parse_args( $config_value, $capabilities );
+					}
+				}				
+			}
+
 			$capabilities = apply_filters( 'td_webmaster_capabilities', $capabilities );
 			return $capabilities;
 		}
@@ -213,8 +256,15 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 			$wp_roles = new WP_Roles();
 			if ( $wp_roles->is_role( 'webmaster' ) ) return;
 
-			$this->deactivate( false );
-			$this->activate( false );
+			$this->deactivate( is_multisite() );
+			$this->activate( is_multisite() );
+		}
+
+		function prevent_network_admin_access() {
+			if ( is_network_admin() && !is_super_admin( get_current_user_id() ) ) {
+				wp_redirect( admin_url( ) );
+				exit();
+			}
 		}
 
 		function cleanup_dashboard_widgets() {
@@ -230,12 +280,13 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 
 		function admin_menu() {
 			if ( $this->current_user_is_webmaster() ) {
-				remove_menu_page( 'options-general.php' );
+				global $webmaster_user_role_config;
 				remove_menu_page( 'branding' );
-				remove_menu_page( 'sucuriscan' );
-				remove_menu_page( 'tools.php' );
-				remove_menu_page( 'edit.php?post_type=acf' );
-				remove_menu_page( 'edit.php?post_type=acf-field-group' );
+				if ( is_object( $webmaster_user_role_config ) && empty( $webmaster_user_role_config->sections ) ) return;
+
+				if ( empty ( $webmaster_user_role_config['webmaster_admin_menu_tools_settings']['options-general.php'] ) ) remove_menu_page( 'options-general.php' );
+				if ( empty ( $webmaster_user_role_config['webmaster_admin_menu_sucuri']['sucuriscan'] ) ) remove_menu_page( 'sucuriscan' );
+				if ( empty ( $webmaster_user_role_config['webmaster_admin_menu_tools_settings']['tools.php'] ) ) remove_menu_page( 'tools.php' );
 			}
 		}
 
@@ -248,15 +299,15 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 
 		function updated_option( $option, $oldvalue, $newValue ) {
 			if ( $option=='role_display_name' || strpos( 'cap_', $option )!==false ) {
-				$this->deactivate( false );
-				$this->activate( false );
+				$this->deactivate( is_multisite() );
+				$this->activate( is_multisite() );
 			}
 		}
 
 		function deleted_option( $option ) {
 			if ( $option=='role_display_name' || strpos( 'cap_', $option )!==false ) {
-				$this->deactivate( false );
-				$this->activate( false );
+				$this->deactivate( is_multisite() );
+				$this->activate( is_multisite() );
 			}
 		}
 
@@ -342,13 +393,11 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 			SELECT blog_id
 			FROM {$wpdb->blogs}
 			WHERE site_id = %d
-			AND blog_id <> %d
 			AND spam = '0'
 			AND deleted = '0'
 			AND archived = '0'
 			ORDER BY registered DESC
-			LIMIT %d, 5
-		", $wpdb->siteid, $wpdb->blogid, $offset ) );
+		", $wpdb->siteid ) );
 
 			return $blogs;
 		}
@@ -359,7 +408,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 		 */
 		private function register_scripts_and_styles() {
 			if ( is_admin() ) {
-				$this->load_file( self::slug . '-admin-script', '/js/admin.js', true );
+				// $this->load_file( self::slug . '-admin-script', '/js/admin.js', true );
 				$this->load_file( self::slug . '-admin-style', '/css/admin.css' );
 			} else {
 				// $this->load_file( self::slug . '-script', '/js/widget.js', true );
