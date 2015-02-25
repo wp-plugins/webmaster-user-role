@@ -3,7 +3,7 @@
 Plugin Name: Webmaster User Role
 Plugin URI: http://tylerdigital.com/products/webmaster-user-role/
 Description: Adds a Webmaster user role between Administrator and Editor.  By default this user is the same as Administrator, without the capability to manage plugins or change themes
-Version: 1.3.1
+Version: 1.3.2
 Author: Tyler Digital
 Author URI: http://tylerdigital.com
 Author Email: support@tylerdigital.com
@@ -406,7 +406,7 @@ if ( !class_exists( 'TD_WebmasterUserRole' ) ) {
 		 * Registers and enqueues stylesheets for the administration panel and the
 		 * public facing site.
 		 */
-		private function register_scripts_and_styles() {
+		public function register_scripts_and_styles() {
 			if ( is_admin() ) {
 				// $this->load_file( self::slug . '-admin-script', '/js/admin.js', true );
 				$this->load_file( self::slug . '-admin-style', '/css/admin.css' );
